@@ -1,0 +1,22 @@
+# Environment
+.env
+venv/
+env/
+__pycache__/
+*.pyc
+
+# Downloads
+downloads/
+*.mp4
+*.webm
+*.mkv
+
+# Logs
+*.log
+
+# Sensitive
+cookies.txt
+
+# OS
+.DS_Store
+Thumbs.db
