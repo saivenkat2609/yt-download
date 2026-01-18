@@ -171,25 +171,20 @@ def download_youtube_video(url, use_cookies=True, max_retries=3):
     # Build yt-dlp command with anti-detection features
     command = [
         'yt-dlp',
-        # Format selection (prefer MP4, simpler format string)
-        '--format', 'best[ext=mp4]/best',
-        '--merge-output-format', 'mp4',
+        # Format selection (simpler - let yt-dlp decide)
+        '--format', 'best',
         # Output
         '--output', output_template,
         '--no-playlist',
         '--print', 'after_move:filepath',
         # Anti-detection measures
         '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-        '--referer', 'https://www.youtube.com/',
         # Network settings
         '--socket-timeout', '30',
-        '--retries', '10',
-        '--fragment-retries', '10',
-        # Additional flags to avoid empty files
-        '--no-check-certificates',
-        '--prefer-insecure',
-        # Verbose for debugging
-        '--verbose',
+        '--retries', '5',
+        '--fragment-retries', '5',
+        # For debugging
+        '--no-warnings',
     ]
 
     # Add cookies if file exists
