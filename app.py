@@ -43,11 +43,14 @@ def background_worker():
     logger.info("🚀 Background worker started")
 
     while True:
+        video_data = None
         try:
             # Get video from queue (blocking)
-            video_data = video_queue.get()
+            logger.info(f"⏳ Worker waiting for next video (queue size: {video_queue.qsize()})...")
+            video_data = video_queue.get(timeout=1)
 
             if video_data is None:  # Poison pill to stop worker
+                logger.info("🛑 Worker received stop signal")
                 break
 
             url = video_data['url']
@@ -56,23 +59,43 @@ def background_worker():
 
             logger.info(f"📥 Processing from queue: {url}")
 
-            # Process video
-            success, message = process_video(url, keep_local=False)
+            try:
+                # Process video
+                success, message = process_video(url, keep_local=False)
 
-            if success:
-                processing_status['completed'] += 1
-                logger.info(f"✅ Queue processing success: {url}")
-            else:
+                if success:
+                    processing_status['completed'] += 1
+                    logger.info(f"✅ Queue processing success: {url}")
+                else:
+                    processing_status['failed'] += 1
+                    logger.error(f"❌ Queue processing failed: {url} - {message}")
+
+            except Exception as proc_error:
+                logger.error(f"❌ Error processing video {url}: {proc_error}")
                 processing_status['failed'] += 1
-                logger.error(f"❌ Queue processing failed: {url} - {message}")
 
             processing_status['current'] = None
             processing_status['queue_size'] = video_queue.qsize()
 
             video_queue.task_done()
+            logger.info(f"✅ Task marked as done. Remaining in queue: {video_queue.qsize()}")
 
+        except queue.Empty:
+            # Timeout, continue loop
+            continue
         except Exception as e:
-            logger.error(f"❌ Worker error: {e}")
+            logger.error(f"❌ Worker critical error: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            if video_data is not None:
+                try:
+                    video_queue.task_done()
+                    processing_status['failed'] += 1
+                    processing_status['current'] = None
+                except:
+                    pass
+
+    logger.info("🛑 Background worker stopped")
 
 def start_worker():
     """
