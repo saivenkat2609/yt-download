@@ -8,10 +8,15 @@ from flask import Flask, request, jsonify
 import threading
 import queue
 import logging
-from youtube_downloader import process_video, process_batch, check_ytdlp_version
+from youtube_downloader import process_video, process_batch, check_ytdlp_version, download_cookies_from_r2
 import os
 
 app = Flask(__name__)
+
+# Download cookies from R2 on startup
+logger = logging.getLogger(__name__)
+logger.info("🚀 Initializing YouTube Downloader...")
+download_cookies_from_r2()
 
 # Configure logging
 logging.basicConfig(
@@ -128,14 +133,7 @@ def home():
             <pre>curl https://your-app.onrender.com/status</pre>
         </div>
 
-        <div class="endpoint">
-            <h3>GET/POST /upload-cookies</h3>
-            <p><strong>⭐ NEW: Upload cookies via web form (no Shell access needed!)</strong></p>
-            <p>Visit this page in your browser to paste and upload cookies.txt</p>
-            <pre>https://your-app.onrender.com/upload-cookies</pre>
-        </div>
-
-        <p><strong>⚠️ Important:</strong> Upload your YouTube cookies first at <a href="/upload-cookies">/upload-cookies</a> before downloading videos!</p>
+        <p><strong>Note:</strong> Make sure cookies.txt is uploaded and R2 credentials are configured in environment variables.</p>
     </body>
     </html>
     """
@@ -293,98 +291,6 @@ def logs():
             return '<pre>No logs available</pre>'
     except Exception as e:
         return f'<pre>Error reading logs: {e}</pre>'
-
-@app.route('/upload-cookies', methods=['GET', 'POST'])
-def upload_cookies():
-    """
-    Upload cookies.txt via web interface (workaround for no Shell access)
-    """
-    if request.method == 'GET':
-        # Show upload form
-        return """
-        <html>
-        <head>
-            <title>Upload Cookies</title>
-            <style>
-                body { font-family: Arial; max-width: 800px; margin: 50px auto; padding: 20px; }
-                textarea { width: 100%; height: 300px; font-family: monospace; font-size: 12px; }
-                button { background: #007bff; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; }
-                button:hover { background: #0056b3; }
-                .success { background: #d4edda; border: 1px solid #c3e6cb; color: #155724; padding: 15px; border-radius: 5px; margin: 20px 0; }
-                .error { background: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; padding: 15px; border-radius: 5px; margin: 20px 0; }
-            </style>
-        </head>
-        <body>
-            <h1>🍪 Upload YouTube Cookies</h1>
-            <p>Paste the <strong>entire content</strong> of your cookies.txt file below:</p>
-            <form method="POST">
-                <textarea name="cookies" placeholder="# Netscape HTTP Cookie File
-# This is a generated file! Do not edit.
-.youtube.com	TRUE	/	TRUE	1735689600	VISITOR_INFO1_LIVE	...
-..."></textarea>
-                <br><br>
-                <button type="submit">Upload Cookies</button>
-            </form>
-            <br>
-            <p><strong>Instructions:</strong></p>
-            <ol>
-                <li>Export cookies from your browser (Chrome/Firefox extension)</li>
-                <li>Open cookies.txt in Notepad</li>
-                <li>Copy ALL content (Ctrl+A, Ctrl+C)</li>
-                <li>Paste above and click Upload</li>
-            </ol>
-            <p><a href="/health">← Back to Health Check</a></p>
-        </body>
-        </html>
-        """
-    else:
-        # Handle upload
-        try:
-            cookies_content = request.form.get('cookies', '').strip()
-
-            if not cookies_content:
-                return """
-                <html><body style="font-family: Arial; max-width: 800px; margin: 50px auto; padding: 20px;">
-                    <div class="error">❌ Error: No cookies content provided!</div>
-                    <a href="/upload-cookies">← Try Again</a>
-                </body></html>
-                """
-
-            # Write to cookies.txt
-            with open('cookies.txt', 'w') as f:
-                f.write(cookies_content)
-
-            logger.info(f"✅ Cookies uploaded successfully via web interface ({len(cookies_content)} bytes)")
-
-            return """
-            <html>
-            <head>
-                <title>Upload Success</title>
-                <style>
-                    body { font-family: Arial; max-width: 800px; margin: 50px auto; padding: 20px; }
-                    .success { background: #d4edda; border: 1px solid #c3e6cb; color: #155724; padding: 15px; border-radius: 5px; margin: 20px 0; }
-                </style>
-            </head>
-            <body>
-                <h1>✅ Cookies Uploaded Successfully!</h1>
-                <div class="success">
-                    <p><strong>Cookies file created:</strong> cookies.txt</p>
-                    <p><strong>Size:</strong> """ + str(len(cookies_content)) + """ bytes</p>
-                </div>
-                <p>Your cookies are now active. You can start downloading videos!</p>
-                <p><a href="/health">Check Health Status</a> | <a href="/">Home</a></p>
-            </body>
-            </html>
-            """
-
-        except Exception as e:
-            logger.error(f"❌ Cookie upload failed: {e}")
-            return f"""
-            <html><body style="font-family: Arial; max-width: 800px; margin: 50px auto; padding: 20px;">
-                <div class="error">❌ Error: {e}</div>
-                <a href="/upload-cookies">← Try Again</a>
-            </body></html>
-            """
 
 if __name__ == '__main__':
     # Get port from environment (Render provides PORT env var)
