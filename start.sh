@@ -11,12 +11,8 @@ if [ ! -z "$YOUTUBE_COOKIES" ]; then
     echo "✅ cookies.txt created successfully"
 else
     echo "⚠️  WARNING: YOUTUBE_COOKIES environment variable not set!"
-    echo "   Downloads may fail without cookies."
+    echo "   Use /upload-cookies endpoint to upload cookies via web interface."
 fi
-
-# Update yt-dlp to latest version
-echo "📦 Updating yt-dlp..."
-pip install -U yt-dlp
 
 echo "✅ Startup complete!"
 echo "🎬 Starting Gunicorn..."
