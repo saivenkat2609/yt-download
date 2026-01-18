@@ -2,12 +2,14 @@ services:
   - type: web
     name: youtube-downloader
     env: python
-    buildCommand: "pip install -r requirements.txt"
-    startCommand: "bash start.sh"
+    buildCommand: "export YTDL_NO_UPDATE_CHECK=1 && pip install -r requirements.txt"
+    startCommand: "gunicorn app:app"
     plan: free
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.7
+      - key: YTDL_NO_UPDATE_CHECK
+        value: "1"
       - key: R2_ENDPOINT
         sync: false
       - key: R2_ACCESS_KEY_ID
