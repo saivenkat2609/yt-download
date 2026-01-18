@@ -45,20 +45,22 @@ def random_delay(min_seconds=10, max_seconds=30):
 
 def check_ytdlp_version():
     """
-    Check and update yt-dlp if needed
+    Check yt-dlp availability (without version check to avoid rate limits)
     """
     try:
+        # Just check if yt-dlp exists, don't fetch version info
         result = subprocess.run(
-            ['yt-dlp', '--version'],
+            ['which', 'yt-dlp'],
             capture_output=True,
-            text=True,
-            check=True
+            text=True
         )
-        version = result.stdout.strip()
-        logger.info(f"ℹ️  yt-dlp version: {version}")
-        return True
+        if result.returncode == 0:
+            logger.info(f"ℹ️  yt-dlp is installed")
+            return True
+        else:
+            return False
     except Exception as e:
-        logger.error(f"❌ yt-dlp not found or error: {e}")
+        logger.error(f"❌ yt-dlp not found: {e}")
         return False
 
 def download_youtube_video(url, use_cookies=True, max_retries=3):
@@ -74,6 +76,8 @@ def download_youtube_video(url, use_cookies=True, max_retries=3):
     # Build yt-dlp command with anti-detection features
     command = [
         'yt-dlp',
+        # Disable update check (avoids rate limits)
+        '--no-check-update',
         # Format selection (prefer MP4)
         '--format', 'bestvideo[ext=mp4][height<=1080]+bestaudio[ext=m4a]/best[ext=mp4]/best',
         '--merge-output-format', 'mp4',
