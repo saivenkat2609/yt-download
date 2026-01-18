@@ -30,10 +30,62 @@ R2_ENDPOINT = os.getenv('R2_ENDPOINT')
 R2_ACCESS_KEY = os.getenv('R2_ACCESS_KEY_ID')
 R2_SECRET_KEY = os.getenv('R2_SECRET_ACCESS_KEY')
 R2_BUCKET = os.getenv('R2_BUCKET_NAME')
+R2_COOKIES_FILE = os.getenv('R2_COOKIES_FILE', 'cookies.txt')  # Name of cookies file in R2
 
 # Create downloads directory
 DOWNLOAD_DIR = 'downloads'
 Path(DOWNLOAD_DIR).mkdir(exist_ok=True)
+
+def download_cookies_from_r2():
+    """
+    Download cookies.txt from R2 bucket if not present locally
+    """
+    local_cookies_path = 'cookies.txt'
+
+    # If cookies already exist locally, check if they're fresh (< 7 days old)
+    if os.path.exists(local_cookies_path):
+        file_age = time.time() - os.path.getmtime(local_cookies_path)
+        if file_age < 7 * 24 * 3600:  # Less than 7 days old
+            logger.info(f"🍪 Using existing cookies.txt (age: {file_age/86400:.1f} days)")
+            return True
+        else:
+            logger.info(f"🍪 Local cookies are old ({file_age/86400:.1f} days), downloading fresh copy from R2...")
+
+    # Download from R2
+    if not all([R2_ENDPOINT, R2_ACCESS_KEY, R2_SECRET_KEY, R2_BUCKET]):
+        logger.warning("⚠️  R2 credentials not configured, cannot download cookies")
+        return False
+
+    try:
+        logger.info(f"☁️  Downloading cookies from R2: {R2_BUCKET}/{R2_COOKIES_FILE}")
+
+        s3_client = boto3.client(
+            's3',
+            endpoint_url=R2_ENDPOINT,
+            aws_access_key_id=R2_ACCESS_KEY,
+            aws_secret_access_key=R2_SECRET_KEY,
+            region_name='auto'
+        )
+
+        # Download cookies file
+        s3_client.download_file(
+            R2_BUCKET,
+            R2_COOKIES_FILE,
+            local_cookies_path
+        )
+
+        # Verify file exists and has content
+        if os.path.exists(local_cookies_path) and os.path.getsize(local_cookies_path) > 0:
+            logger.info(f"✅ Cookies downloaded successfully from R2 ({os.path.getsize(local_cookies_path)} bytes)")
+            return True
+        else:
+            logger.error("❌ Downloaded cookies file is empty")
+            return False
+
+    except Exception as e:
+        logger.error(f"❌ Failed to download cookies from R2: {e}")
+        logger.warning("⚠️  Continuing without cookies - downloads may fail")
+        return False
 
 def random_delay(min_seconds=10, max_seconds=30):
     """
@@ -45,22 +97,20 @@ def random_delay(min_seconds=10, max_seconds=30):
 
 def check_ytdlp_version():
     """
-    Check yt-dlp availability (without version check to avoid rate limits)
+    Check and update yt-dlp if needed
     """
     try:
-        # Just check if yt-dlp exists, don't fetch version info
         result = subprocess.run(
-            ['which', 'yt-dlp'],
+            ['yt-dlp', '--version'],
             capture_output=True,
-            text=True
+            text=True,
+            check=True
         )
-        if result.returncode == 0:
-            logger.info(f"ℹ️  yt-dlp is installed")
-            return True
-        else:
-            return False
+        version = result.stdout.strip()
+        logger.info(f"ℹ️  yt-dlp version: {version}")
+        return True
     except Exception as e:
-        logger.error(f"❌ yt-dlp not found: {e}")
+        logger.error(f"❌ yt-dlp not found or error: {e}")
         return False
 
 def download_youtube_video(url, use_cookies=True, max_retries=3):
@@ -76,8 +126,6 @@ def download_youtube_video(url, use_cookies=True, max_retries=3):
     # Build yt-dlp command with anti-detection features
     command = [
         'yt-dlp',
-        # Disable update check (avoids rate limits)
-        '--no-check-update',
         # Format selection (prefer MP4)
         '--format', 'bestvideo[ext=mp4][height<=1080]+bestaudio[ext=m4a]/best[ext=mp4]/best',
         '--merge-output-format', 'mp4',
