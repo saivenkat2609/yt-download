@@ -36,6 +36,43 @@ R2_COOKIES_FILE = os.getenv('R2_COOKIES_FILE', 'cookies.txt')  # Name of cookies
 DOWNLOAD_DIR = 'downloads'
 Path(DOWNLOAD_DIR).mkdir(exist_ok=True)
 
+def validate_cookies(cookies_path='cookies.txt'):
+    """
+    Validate cookies file format
+    """
+    if not os.path.exists(cookies_path):
+        return False
+
+    try:
+        with open(cookies_path, 'r') as f:
+            content = f.read()
+            lines = content.strip().split('\n')
+
+            # Check if it has content
+            if len(lines) < 5:
+                logger.warning("⚠️  Cookies file seems too small")
+                return False
+
+            # Check for Netscape format
+            valid_lines = 0
+            for line in lines:
+                if line.startswith('#') or not line.strip():
+                    continue
+                parts = line.split('\t')
+                if len(parts) >= 7:
+                    valid_lines += 1
+
+            if valid_lines > 0:
+                logger.info(f"✅ Cookies validated: {valid_lines} valid entries")
+                return True
+            else:
+                logger.warning("⚠️  No valid cookie entries found")
+                return False
+
+    except Exception as e:
+        logger.error(f"❌ Error validating cookies: {e}")
+        return False
+
 def download_cookies_from_r2():
     """
     Download cookies.txt from R2 bucket if not present locally
@@ -47,6 +84,7 @@ def download_cookies_from_r2():
         file_age = time.time() - os.path.getmtime(local_cookies_path)
         if file_age < 7 * 24 * 3600:  # Less than 7 days old
             logger.info(f"🍪 Using existing cookies.txt (age: {file_age/86400:.1f} days)")
+            validate_cookies(local_cookies_path)
             return True
         else:
             logger.info(f"🍪 Local cookies are old ({file_age/86400:.1f} days), downloading fresh copy from R2...")
@@ -77,7 +115,14 @@ def download_cookies_from_r2():
         # Verify file exists and has content
         if os.path.exists(local_cookies_path) and os.path.getsize(local_cookies_path) > 0:
             logger.info(f"✅ Cookies downloaded successfully from R2 ({os.path.getsize(local_cookies_path)} bytes)")
-            return True
+
+            # Validate cookie format
+            if validate_cookies(local_cookies_path):
+                return True
+            else:
+                logger.error("❌ Downloaded cookies are invalid format")
+                logger.error("💡 Make sure you exported cookies in Netscape format")
+                return False
         else:
             logger.error("❌ Downloaded cookies file is empty")
             return False
@@ -126,27 +171,25 @@ def download_youtube_video(url, use_cookies=True, max_retries=3):
     # Build yt-dlp command with anti-detection features
     command = [
         'yt-dlp',
-        # Format selection (prefer MP4)
-        '--format', 'bestvideo[ext=mp4][height<=1080]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+        # Format selection (prefer MP4, simpler format string)
+        '--format', 'best[ext=mp4]/best',
         '--merge-output-format', 'mp4',
         # Output
         '--output', output_template,
         '--no-playlist',
         '--print', 'after_move:filepath',
         # Anti-detection measures
-        '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+        '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
         '--referer', 'https://www.youtube.com/',
-        # Rate limiting
-        '--limit-rate', '2M',
-        '--sleep-interval', '3',
-        '--max-sleep-interval', '7',
-        # Network
+        # Network settings
         '--socket-timeout', '30',
         '--retries', '10',
         '--fragment-retries', '10',
-        # Other
-        '--no-warnings',
-        '--ignore-errors',
+        # Additional flags to avoid empty files
+        '--no-check-certificates',
+        '--prefer-insecure',
+        # Verbose for debugging
+        '--verbose',
     ]
 
     # Add cookies if file exists
@@ -194,17 +237,32 @@ def download_youtube_video(url, use_cookies=True, max_retries=3):
 
         except subprocess.CalledProcessError as e:
             logger.error(f"❌ Attempt {attempt} failed with exit code {e.returncode}")
-            logger.error(f"Error output: {e.stderr[:500]}")
+            logger.error(f"Error output: {e.stderr[:1000]}")
+
+            stderr_lower = e.stderr.lower()
 
             # Check for specific errors
-            if '403' in e.stderr or 'Forbidden' in e.stderr:
+            if 'empty' in stderr_lower:
+                logger.error("📭 Empty file error - YouTube may be blocking. Trying with different settings...")
+                if attempt < max_retries:
+                    wait_time = 30 * attempt
+                    logger.info(f"⏳ Waiting {wait_time} seconds before retry...")
+                    time.sleep(wait_time)
+            elif '403' in e.stderr or 'forbidden' in stderr_lower:
                 logger.error("🚫 HTTP 403 - Likely rate limited or blocked")
                 if attempt < max_retries:
                     wait_time = 60 * attempt  # Progressive backoff
                     logger.info(f"⏳ Waiting {wait_time} seconds before retry...")
                     time.sleep(wait_time)
-            elif 'Sign in to confirm' in e.stderr:
+            elif 'sign in' in stderr_lower or 'bot' in stderr_lower:
                 logger.error("🤖 Bot detection triggered - Need valid cookies!")
+                logger.error("💡 Try updating cookies from your browser")
+                if attempt < max_retries:
+                    wait_time = 45 * attempt
+                    logger.info(f"⏳ Waiting {wait_time} seconds before retry...")
+                    time.sleep(wait_time)
+            elif 'private' in stderr_lower or 'unavailable' in stderr_lower:
+                logger.error("🔒 Video is private or unavailable")
                 return None
 
         except Exception as e:
