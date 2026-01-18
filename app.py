@@ -191,11 +191,32 @@ def health():
     ])
     cookies_exist = os.path.exists('cookies.txt')
 
+    # Validate cookies
+    from youtube_downloader import validate_cookies
+    cookies_valid = validate_cookies() if cookies_exist else False
+
+    cookie_info = {}
+    if cookies_exist:
+        try:
+            import os
+            cookie_size = os.path.getsize('cookies.txt')
+            cookie_age = os.path.getmtime('cookies.txt')
+            import time
+            age_days = (time.time() - cookie_age) / 86400
+            cookie_info = {
+                'size_bytes': cookie_size,
+                'age_days': round(age_days, 1),
+                'valid_format': cookies_valid
+            }
+        except:
+            pass
+
     return jsonify({
         'status': 'healthy',
         'ytdlp_installed': ytdlp_ok,
         'r2_configured': r2_configured,
         'cookies_available': cookies_exist,
+        'cookies_info': cookie_info,
         'worker_alive': worker_thread is not None and worker_thread.is_alive(),
         'queue_size': video_queue.qsize(),
         'stats': processing_status
