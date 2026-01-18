@@ -34,6 +34,8 @@ processing_status = {
     'failed': 0
 }
 
+worker_thread = None
+
 def background_worker():
     """
     Background thread that processes videos from queue
@@ -72,9 +74,20 @@ def background_worker():
         except Exception as e:
             logger.error(f"❌ Worker error: {e}")
 
-# Start background worker thread
-worker_thread = threading.Thread(target=background_worker, daemon=True)
-worker_thread.start()
+def start_worker():
+    """
+    Start background worker thread if not already running
+    """
+    global worker_thread
+    if worker_thread is None or not worker_thread.is_alive():
+        logger.info("🔄 Starting background worker thread...")
+        worker_thread = threading.Thread(target=background_worker, daemon=True)
+        worker_thread.start()
+        logger.info("✅ Background worker thread started")
+    return worker_thread
+
+# Start worker on module load
+start_worker()
 
 @app.route('/')
 def home():
@@ -143,6 +156,9 @@ def health():
     """
     Health check endpoint
     """
+    # Ensure worker is running
+    start_worker()
+
     ytdlp_ok = check_ytdlp_version()
     r2_configured = all([
         os.getenv('R2_ENDPOINT'),
@@ -157,7 +173,7 @@ def health():
         'ytdlp_installed': ytdlp_ok,
         'r2_configured': r2_configured,
         'cookies_available': cookies_exist,
-        'worker_alive': worker_thread.is_alive(),
+        'worker_alive': worker_thread is not None and worker_thread.is_alive(),
         'queue_size': video_queue.qsize(),
         'stats': processing_status
     })
@@ -205,6 +221,9 @@ def add_to_queue():
     Returns immediately, video processes in background
     """
     try:
+        # Ensure worker is running
+        start_worker()
+
         data = request.get_json()
 
         if not data or 'url' not in data:
@@ -235,6 +254,9 @@ def batch_queue():
     Add multiple videos to queue at once
     """
     try:
+        # Ensure worker is running
+        start_worker()
+
         data = request.get_json()
 
         if not data or 'urls' not in data:
@@ -273,7 +295,7 @@ def status():
         'queue_size': video_queue.qsize(),
         'total_completed': processing_status['completed'],
         'total_failed': processing_status['failed'],
-        'worker_alive': worker_thread.is_alive()
+        'worker_alive': worker_thread is not None and worker_thread.is_alive()
     })
 
 @app.route('/logs')
